@@ -1,3 +1,10 @@
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-brightgreen?logo=buymeacoffee)](https://www.buymeacoffee.com/armysarge)
+
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![GitHub issues](https://img.shields.io/github/issues/armysarge/rigranger-server)](https://github.com/armysarge/rigranger-server/issues)
+
 # RigRanger Server
 
 A lightweight Python-based API server for controlling amateur radios over the network using RigRanger Client.
