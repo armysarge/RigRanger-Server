@@ -36,7 +36,6 @@ class RigRangerServer:
     - Socket.IO server for real-time communication
     - Event handling for client connections
     - Integration with the HamlibManager and AudioManager
-    - Static file serving for web interface
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -55,9 +54,6 @@ class RigRangerServer:
         self.port = self.server_config.get('port', 8080)
         self.host = self.server_config.get('host', '0.0.0.0')
 
-        # Static files path
-        self.static_path = Path(self.server_config.get('static_files_path', 'public'))
-
         # Set up Socket.IO and web application
         self.sio = socketio.AsyncServer(async_mode='aiohttp', cors_allowed_origins='*')
         self.app = web.Application()
@@ -71,7 +67,6 @@ class RigRangerServer:
 
         # Set up routes and event handlers
         self.setup_routes()
-        self.setup_static_routes()
         self.setup_hamlib_events()
         self.setup_audio_events()
 
@@ -82,113 +77,6 @@ class RigRangerServer:
     def setup_routes(self) -> None:
         """Set up HTTP API routes."""
         setup_api_routes(self)
-
-    def setup_static_routes(self) -> None:
-        """Set up routes for serving static files."""
-        # Check if the static directory exists
-        if not self.static_path.exists():
-            logger.warning(f"Static files directory {self.static_path} does not exist. Creating minimal UI.")
-            self.static_path.mkdir(parents=True, exist_ok=True)
-            self.create_minimal_ui(self.static_path)
-
-        # Add static routes
-        self.app.router.add_static('/static/', self.static_path, append_version=True)        # Serve index.html for the root
-        self.app.router.add_get('/', self.handle_root)
-
-    async def handle_root(self, request: web.Request) -> web.Response:
-        """
-        Handle requests to the root URL.
-
-        Args:
-            request: The HTTP request
-
-        Returns:
-            web.Response: Server info response
-        """
-        # Serve the index.html file if the public directory exists
-        index_path = self.static_path / 'index.html'
-        if index_path.exists():
-            return web.FileResponse(index_path)
-
-        # Otherwise, return a simple text response
-        return web.Response(text="RigRanger Server is running.", content_type='text/plain')
-
-    def create_minimal_ui(self, static_path: Path) -> None:
-        """
-        Create a minimal UI if the public directory doesn't exist.
-
-        Args:
-            static_path (Path): Path to the static files directory
-        """
-        # Create a basic index.html file
-        index_html = """<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RigRanger Server</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            line-height: 1.6;
-        }
-        h1 {
-            color: #1976d2;
-        }
-        .status {
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
-        }
-        .connected {
-            background-color: #e8f5e9;
-            color: #2e7d32;
-        }
-        .disconnected {
-            background-color: #ffebee;
-            color: #c62828;
-        }
-    </style>
-</head>
-<body>
-    <h1>RigRanger Server</h1>
-    <div id="status" class="status disconnected">Not connected to server</div>
-    <p>This is a minimal UI for the RigRanger Server. For a better experience, place your custom UI files in the 'public' directory.</p>
-
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-        const socket = io();
-        const statusDiv = document.getElementById('status');
-
-        socket.on('connect', () => {
-            statusDiv.textContent = 'Connected to server';
-            statusDiv.className = 'status connected';
-        });
-
-        socket.on('disconnect', () => {
-            statusDiv.textContent = 'Disconnected from server';
-            statusDiv.className = 'status disconnected';
-        });
-
-        socket.on('hamlib-status', (data) => {
-            if (data.status === 'connected') {
-                statusDiv.textContent = 'Connected to radio';
-                statusDiv.className = 'status connected';
-            } else {
-                statusDiv.textContent = 'Radio status: ' + data.status;
-                statusDiv.className = 'status disconnected';
-            }
-        });
-    </script>
-</body>
-</html>
-"""
-        index_path = static_path / 'index.html'
-        with open(index_path, 'w') as f:
-            f.write(index_html)
-
-        logger.info(f"Created minimal UI at {index_path}")
 
     def setup_hamlib_events(self) -> None:
         """Set up event handlers for Hamlib events."""
@@ -273,7 +161,7 @@ class RigRangerServer:
         logger.info(f"Server started on port {self.port}")
 
         for ip in ips:
-            logger.info(f"Access the web interface at: http://{ip}:{self.port}")
+            logger.info(f"Access the API at: http://{ip}:{self.port}")
 
     async def stop(self) -> None:
         """Stop the server."""

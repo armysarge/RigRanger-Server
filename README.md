@@ -2,28 +2,28 @@
 
 ![RigRanger Logo](public/logo.webp)
 
-A lightweight Python-based console application for controlling amateur radios over the network using Hamlib. This server is designed to run on small devices like Raspberry Pi but works on Windows, macOS, and Linux as well.
+A lightweight Python-based console application for controlling amateur radios over the network using RigRanger Client. This server is designed to run on small devices like Raspberry Pi but works on Windows, macOS, and Linux as well.
 
 ## Features
 
-- **Hamlib Integration** - Control a wide variety of amateur radios using the Hamlib library
-- **Web Interface** - Simple web UI for controlling your radio from any device with a browser
+- **RigRanger Client Integration** - Control a wide variety of amateur radios using the RigRanger Client
 - **Socket.IO API** - Real-time communication for responsive control
 - **Cross Platform** - Runs on Windows, macOS, Linux, and Raspberry Pi
 - **Lightweight** - Minimal resource usage, perfect for embedded devices
 - **Standalone** - Can be built as a standalone executable with no dependencies
+- **API Documentation** - Easy to use HTTP API for integration with other applications
 
 ## Requirements
 
 - Python 3.7 or higher
-- Hamlib (rigctld binary)
+- Hamlib (for radio control)
 - For audio functionality: appropriate audio drivers for your platform
 
 ## Installation
 
 ### Windows
 
-1. Download the latest release from the [Releases page](https://github.com/YourUsername/RigRanger-Server/releases)
+1. Download the latest release from the [Releases page](https://github.com/Armysarge/RigRanger-Server/releases)
 2. Extract the ZIP file to a location of your choice
 3. Install Hamlib if not already installed:
    - Download from [Hamlib Releases](https://github.com/Hamlib/Hamlib/releases)
@@ -37,7 +37,7 @@ Automatic installation:
 ```bash
 sudo apt-get update
 sudo apt-get install -y git
-git clone https://github.com/YourUsername/RigRanger-Server.git
+git clone https://github.com/Armysarge/RigRanger-Server.git
 cd RigRanger-Server
 chmod +x install.sh
 sudo ./install.sh
@@ -51,7 +51,7 @@ sudo apt-get update
 sudo apt-get install -y python3 python3-pip libhamlib-utils
 
 # Clone the repository
-git clone https://github.com/YourUsername/RigRanger-Server.git
+git clone https://github.com/Armysarge/RigRanger-Server.git
 cd RigRanger-Server
 
 # Install Python dependencies
@@ -73,7 +73,7 @@ See [Raspberry Pi Setup Guide](docs/raspberry_pi_setup.md) for detailed instruct
 brew install python3 hamlib
 
 # Clone the repository
-git clone https://github.com/YourUsername/RigRanger-Server.git
+git clone https://github.com/Armysarge/RigRanger-Server.git
 cd RigRanger-Server
 
 # Install Python dependencies

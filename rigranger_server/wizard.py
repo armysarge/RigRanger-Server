@@ -420,11 +420,12 @@ You can configure:
 
     # Save configuration if path provided
     if config_path:
+        from rigranger_server.config import save_config
         try:
-            os.makedirs(os.path.dirname(os.path.abspath(config_path)), exist_ok=True)
-            with open(config_path, 'w') as f:
-                json.dump(config, f, indent=2)
-            print(f"\nConfiguration saved to {config_path}")
+            if save_config(config, config_path):
+                print(f"\nConfiguration saved to {config_path}")
+            else:
+                print("\nFailed to save configuration")
         except Exception as e:
             print(f"\nError saving configuration: {e}")
 
