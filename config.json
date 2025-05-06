@@ -1,0 +1,26 @@
+{
+  "server": {
+    "port": 8080,
+    "host": "0.0.0.0",
+    "static_files_path": "public"
+  },
+  "hamlib": {
+    "model": 1,
+    "device": null,
+    "baud": 19200,
+    "retry_interval": 5,
+    "reconnect_attempts": 5
+  },
+  "audio": {
+    "enabled": false,
+    "input_device": "default",
+    "output_device": "default",
+    "sample_rate": 48000,
+    "channels": 1
+  },
+  "logging": {
+    "level": "info",
+    "file": "rig_ranger_server.log",
+    "console": true
+  }
+}
