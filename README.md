@@ -1,6 +1,6 @@
 # RigRanger Server
 
-![RigRanger Logo](public/logo.webp)
+<center><img src="public/logo.png" alt="RigRanger Logo" width="200"></center>
 
 A lightweight Python-based console application for controlling amateur radios over the network using RigRanger Client. This server is designed to run on small devices like Raspberry Pi but works on Windows, macOS, and Linux as well.
 
@@ -145,16 +145,6 @@ python rigranger_python_server.py -p 8090
 # Use a configuration file
 python rigranger_python_server.py -c config.json
 ```
-
-## Web Interface
-
-Once the server is running, you can access the web interface by opening a browser and navigating to:
-
-```
-http://localhost:8080
-```
-
-If accessing from another device, replace `localhost` with the IP address of the computer running the server.
 
 ## API
 

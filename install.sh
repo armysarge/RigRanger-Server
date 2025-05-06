@@ -50,8 +50,6 @@ apt-get update
 echo -e "${YELLOW}Installing required packages...${NC}"
 install_package "python3"
 install_package "python3-pip"
-install_package "libhamlib-utils"
-install_package "hamlib-utils"
 install_package "git"
 
 # Check Python version
@@ -72,7 +70,7 @@ fi
 if [ ! -d "$INSTALL_DIR/.git" ]; then
   echo -e "${YELLOW}Cloning RigRanger Server repository...${NC}"
   # Clone repository as the actual user
-  su - $SUDO_USER -c "git clone https://github.com/YourUsername/RigRanger-Server.git $INSTALL_DIR"
+  su - $SUDO_USER -c "git clone https://github.com/Armysarge/RigRanger-Server.git $INSTALL_DIR"
 else
   echo -e "${YELLOW}Updating existing repository...${NC}"
   # Pull latest changes as the actual user
@@ -171,7 +169,6 @@ echo -e "${GREEN}  RigRanger Server installation complete!${NC}"
 echo -e "${GREEN}  Installation directory: $INSTALL_DIR${NC}"
 echo -e "${GREEN}  To run manually: python3 $INSTALL_DIR/rigranger_python_server.py${NC}"
 echo -e "${GREEN}  To check service status: sudo systemctl status rigranger-server${NC}"
-echo -e "${GREEN}  Open web interface at: http://localhost:8080${NC}"
 echo -e "${GREEN}=============================================================${NC}"
 
 # Ask to test run the server

@@ -12,7 +12,17 @@ import os
 import json
 import time
 import logging
+import serial.tools.list_ports
 from typing import Dict, List, Any, Optional, Tuple
+from .config import DEFAULT_CONFIG, get_default_config_path, save_config, load_config
+
+# Try to import AudioManager, but don't fail if it's not available
+AudioManager = None
+try:
+    from .audio_manager import AudioManager
+except ImportError:
+    logger = logging.getLogger("rig_ranger.wizard")
+    logger.warning("Could not import AudioManager. Audio features will be disabled.")
 
 logger = logging.getLogger("rig_ranger.wizard")
 
@@ -62,34 +72,68 @@ def print_device_list(devices: List[Dict[str, Any]], device_type: str):
 def get_input_devices(audio_manager) -> List[Dict[str, Any]]:
     """Get a filtered list of input devices without duplicates."""
     all_devices = audio_manager.get_devices()
+    # Consider a device as an input device if it has at least 1 input channel
     input_devices = [d for d in all_devices if d.get('max_input_channels', 0) > 0]
+    logger.debug(f"Found {len(input_devices)} input devices before filtering")
 
-    # Filter out duplicates based on name
+    # Filter out duplicates based on name but keep the one with more channels
+    # or the default device if channel counts are equal
     unique_devices = []
-    seen_names = set()
+    seen_names = {}  # name -> (device, channels)
 
     for device in input_devices:
         name = device.get('name', '')
-        if name and name not in seen_names:
-            seen_names.add(name)
-            unique_devices.append(device)
+        channels = device.get('max_input_channels', 0)
+
+        if name:
+            if name not in seen_names:
+                seen_names[name] = (device, channels)
+            else:
+                prev_device, prev_channels = seen_names[name]
+                # Replace if this device has more channels or is default
+                if channels > prev_channels or (channels == prev_channels and device.get('is_default_input')):
+                    seen_names[name] = (device, channels)
+
+    # Convert back to list
+    unique_devices = [device for device, _ in seen_names.values()]
+    logger.debug(f"Found {len(unique_devices)} unique input devices after filtering")
+
+    # Sort devices: default first, then by name
+    unique_devices.sort(key=lambda d: (not d.get('is_default_input', False), d.get('name', '')))
 
     return unique_devices
 
 def get_output_devices(audio_manager) -> List[Dict[str, Any]]:
     """Get a filtered list of output devices without duplicates."""
     all_devices = audio_manager.get_devices()
+    # Consider a device as an output device if it has at least 1 output channel
     output_devices = [d for d in all_devices if d.get('max_output_channels', 0) > 0]
+    logger.debug(f"Found {len(output_devices)} output devices before filtering")
 
-    # Filter out duplicates based on name
+    # Filter out duplicates based on name but keep the one with more channels
+    # or the default device if channel counts are equal
     unique_devices = []
-    seen_names = set()
+    seen_names = {}  # name -> (device, channels)
 
     for device in output_devices:
         name = device.get('name', '')
-        if name and name not in seen_names:
-            seen_names.add(name)
-            unique_devices.append(device)
+        channels = device.get('max_output_channels', 0)
+
+        if name:
+            if name not in seen_names:
+                seen_names[name] = (device, channels)
+            else:
+                prev_device, prev_channels = seen_names[name]
+                # Replace if this device has more channels or is default
+                if channels > prev_channels or (channels == prev_channels and device.get('is_default_output')):
+                    seen_names[name] = (device, channels)
+
+    # Convert back to list
+    unique_devices = [device for device, _ in seen_names.values()]
+    logger.debug(f"Found {len(unique_devices)} unique output devices after filtering")
+
+    # Sort devices: default first, then by name
+    unique_devices.sort(key=lambda d: (not d.get('is_default_output', False), d.get('name', '')))
 
     return unique_devices
 
@@ -149,7 +193,8 @@ def configure_audio_wizard(audio_manager) -> Dict[str, Any]:
     Returns:
         Dictionary with audio configuration
     """
-    if not audio_manager.pyaudio_available:
+    if not audio_manager or not audio_manager.pyaudio_available:
+        logger.warning("PyAudio not available - audio will be disabled")
         return {
             "enabled": False,
             "input_device": "default",
@@ -187,17 +232,50 @@ the default system devices.
             "channels": 1
         }
 
+    # Get all devices first
+    all_devices = audio_manager.get_devices()
+    if not all_devices:
+        print("\nNo audio devices were detected. Audio support will be disabled.")
+        return {
+            "enabled": False,
+            "input_device": "default",
+            "output_device": "default",
+            "sample_rate": 48000,
+            "channels": 1
+        }
+
     # Get and display input devices
     print_section("Input Device Selection")
     input_devices = get_input_devices(audio_manager)
-    print_device_list(input_devices, 'input')
-    input_device = select_device(input_devices, "Select input device number:", True)
+
+    if not input_devices:
+        print("\nNo input devices found. Using system default.")
+        input_device = None
+    else:
+        print_device_list(input_devices, 'input')
+        input_device = select_device(input_devices, "Select input device number:", True)
 
     # Get and display output devices
     print_section("Output Device Selection")
     output_devices = get_output_devices(audio_manager)
-    print_device_list(output_devices, 'output')
-    output_device = select_device(output_devices, "Select output device number:", True)
+
+    if not output_devices:
+        print("\nNo output devices found. Using system default.")
+        output_device = None
+    else:
+        print_device_list(output_devices, 'output')
+        output_device = select_device(output_devices, "Select output device number:", True)
+
+    # If no devices were selected, disable audio
+    if not input_device and not output_device:
+        print("\nNo audio devices selected. Audio support will be disabled.")
+        return {
+            "enabled": False,
+            "input_device": "default",
+            "output_device": "default",
+            "sample_rate": 48000,
+            "channels": 1
+        }
 
     # Configure sample rate
     print_section("Sample Rate Configuration")
@@ -279,64 +357,59 @@ Channels:      {channels}
 
     return audio_config
 
-def run_config_wizard(config_path: Optional[str] = None) -> Dict[str, Any]:
+def get_serial_devices() -> List[str]:
     """
-    Run the complete configuration wizard.
-
-    Args:
-        config_path: Path to save the configuration file
+    Get a list of available serial devices.
 
     Returns:
-        Dictionary with the complete configuration
+        List of serial device paths
     """
-    # Import here to avoid circular imports
-    from rigranger_server.audio_manager import AudioManager
-    from rigranger_server.utils import load_config
+    try:
+        return [port.device for port in serial.tools.list_ports.comports()]
+    except Exception as e:
+        logger.error(f"Error scanning for serial devices: {e}")
+        return []
 
-    # Start with default config or load existing
-    if config_path and os.path.exists(config_path):
-        config = load_config(config_path)
-        print(f"Loaded existing configuration from {config_path}")
-    else:
-        config = load_config()
+def run_config_wizard(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Run the configuration wizard.
+
+    Args:
+        config_path: Optional path to configuration file
+
+    Returns:
+        Dictionary containing configuration
+    """
+    if not config_path:
+        config_path = get_default_config_path()
+
+    # Start with default config
+    config = DEFAULT_CONFIG.copy()
+
+    # Create config directory if it doesn't exist
+    os.makedirs(os.path.dirname(os.path.abspath(config_path)), exist_ok=True)
 
     clear_screen()
-    print_header("RigRanger Server - Configuration Wizard")
-
-    print("""
-Welcome to the RigRanger Server configuration wizard.
-This wizard will help you set up the server configuration.
-
-You can configure:
-- Server settings (port, host)
-- Hamlib radio settings (model, device)
-- Audio settings (input/output devices)
-""")
+    print_header("RigRanger Server Configuration Wizard")
 
     # Server configuration
     print_section("Server Configuration")
 
-    # Port configuration
-    current_port = config.get('server', {}).get('port', 8080)
-    while True:
+    port = input(f"\nEnter server port (current: {config['server']['port']}, Enter to keep): ")
+    if port.strip():
         try:
-            port_input = input(f"\nEnter server port (current: {current_port}, Enter to keep): ")
-            if not port_input.strip():
-                break
-
-            port = int(port_input)
-            if 1024 <= port <= 65535:
-                config['server']['port'] = port
-                break
-            else:
-                print("Port must be between 1024 and 65535.")
+            config['server']['port'] = int(port)
         except ValueError:
-            print("Please enter a valid port number.")
+            print("Invalid port number, keeping current value.")
+
+    host = input(f"\nEnter server host (current: {config['server']['host']}, Enter to keep): ")
+    if host.strip():
+        config['server']['host'] = host
 
     # Hamlib configuration
-    print_section("Hamlib Radio Configuration")
-    print("\nYou can configure your radio model and connection here.")
-    print("For a complete list of supported radios, run: rigctl -l")    # Show popular radio models
+    print_section("Hamlib Configuration")
+
+    # Show popular radio models
     print("\nPopular Radio Models:")
     print(f"{'Model ID':<10} {'Radio':<30}")
     print("-" * 40)
@@ -352,59 +425,89 @@ You can configure:
         (3073, "Icom IC-7300"),
         (2037, "Kenwood TS-480")
     ]
+    model_ids = [m[0] for m in popular_models]
     for model_id, model_name in popular_models:
         print(f"{model_id:<10} {model_name:<30}")
 
-    # Radio model
-    current_model = config.get('hamlib', {}).get('model', 1)
     while True:
+        model = input(f"\nEnter radio model number (current: {config['hamlib']['model']}, Enter to keep): ")
+        if not model.strip():
+            break
         try:
-            model_input = input(f"\nEnter radio model number (current: {current_model}, Enter to keep): ")
-            if not model_input.strip():
-                break
-
-            model = int(model_input)
-            if model >= 0:
-                config['hamlib']['model'] = model
+            model_num = int(model)
+            if model_num in model_ids:
+                config['hamlib']['model'] = model_num
                 break
             else:
-                print("Model number must be a positive integer.")
+                print("Warning: Model ID not in the list of popular models.")
+                confirm = input("Are you sure you want to use this model? (y/n): ").strip().lower()
+                if confirm == 'y':
+                    config['hamlib']['model'] = model_num
+                    break
         except ValueError:
-            print("Please enter a valid model number.")    # Radio device
-    current_device = config.get('hamlib', {}).get('device', None)
-    current_device_str = current_device if current_device else "None (uses default)"
+            print("Invalid model number, please enter a valid number.")
 
-    print("\nRadio Device Path:")
-    print("This is the serial port where your radio is connected.")
-    print("Examples:")
-    print("  Windows: COM3, COM4, etc.")
-    print("  Linux: /dev/ttyUSB0, /dev/ttyS0, etc.")
-    print("  macOS: /dev/cu.usbserial, etc.")
-    print("Leave empty to use the default device.")
+    current_device_str = config['hamlib']['device'] if config['hamlib']['device'] else "Not set"
 
-    # Show detected serial ports
-    from rigranger_server.utils import find_available_serial_ports
-    serial_ports = find_available_serial_ports()
-    if serial_ports:
-        print("\nDetected Serial Devices:")
-        print(f"{'Device':<20} {'Description':<40}")
-        print("-" * 60)
-        for port in serial_ports:
-            device = port.get('device', 'Unknown')
-            description = port.get('description', 'Unknown')
-            print(f"{device:<20} {description[:40]:<40}")
+    # Show available serial devices
+    print("\nScanning for serial devices...")
+    devices = get_serial_devices()
+    if devices:
+        print("\nAvailable serial devices:")
+        for i, device in enumerate(devices):
+            print(f"{i}: {device}")
     else:
         print("\nNo serial devices detected.")
 
-    device_input = input(f"\nEnter radio device path (current: {current_device_str}, Enter to keep): ")
-    if device_input.strip():
-        config['hamlib']['device'] = device_input
+    while True:
+        device_input = input(f"\nEnter radio device path or number (current: {current_device_str}, Enter to keep): ")
+        if not device_input.strip():
+            break
 
-    # Audio configuration
+        try:
+            # Check if input is a number (index)
+            idx = int(device_input)
+            if 0 <= idx < len(devices):
+                config['hamlib']['device'] = devices[idx]
+                break
+            else:
+                print(f"Please enter a number between 0 and {len(devices)-1}, or a valid device path.")
+        except ValueError:
+            # Input is not a number, check if it's a valid device path
+            if device_input in devices:
+                config['hamlib']['device'] = device_input
+                break
+            else:
+                print("Warning: Device path not found in available devices.")
+                confirm = input("Are you sure you want to use this device path? (y/n): ").strip().lower()
+                if confirm == 'y':
+                    config['hamlib']['device'] = device_input
+                    break    # Audio configuration
     print_section("Audio Configuration")
 
-    # Create temporary AudioManager to enumerate devices
-    audio_manager = AudioManager()
+    # Check if AudioManager is available
+    if AudioManager is None:
+        print("\nPyAudio is not installed. Audio support will be disabled.")
+        config['audio'] = {
+            "enabled": False,
+            "input_device": "default",
+            "output_device": "default",
+            "sample_rate": 48000,
+            "channels": 1
+        }
+    else:
+        try:
+            audio_manager = AudioManager()
+        except Exception as e:
+            print(f"\nError initializing audio: {e}. Audio support will be disabled.")
+            config['audio'] = {
+                "enabled": False,
+                "input_device": "default",
+                "output_device": "default",
+                "sample_rate": 48000,
+                "channels": 1
+            }
+            return config
 
     # Run audio wizard
     while True:
@@ -418,16 +521,41 @@ You can configure:
     else:
         print("\nSkipping audio configuration. Using existing settings.")
 
-    # Save configuration if path provided
-    if config_path:
-        from rigranger_server.config import save_config
-        try:
-            if save_config(config, config_path):
-                print(f"\nConfiguration saved to {config_path}")
-            else:
-                print("\nFailed to save configuration")
-        except Exception as e:
-            print(f"\nError saving configuration: {e}")
+    # Ask user if they want to save the configuration
+    while True:
+        save_prompt = input("\nDo you want to save this configuration? (y/n): ").strip().lower()
+        if save_prompt in ('y', 'n'):
+            break
+        print("Please enter 'y' or 'n'.")
+
+    if save_prompt == 'y':
+        # Ask for save location
+        suggested_path = os.path.abspath(config_path)
+        save_path = input(f"\nEnter path to save configuration (Enter to use {suggested_path}): ").strip()
+
+        if not save_path:
+            save_path = suggested_path
+
+        # Ensure the directory exists
+        save_dir = os.path.dirname(os.path.abspath(save_path))
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Save configuration using the config module's save_config function
+        if save_config(config, save_path):
+            print(f"\nConfiguration saved to {save_path}")
+            # Verify the save by attempting to load it
+            try:
+                loaded_config = load_config(save_path)
+                if loaded_config == config:
+                    print("Configuration verified successfully.")
+                else:
+                    print("Warning: Saved configuration may not be correct. Please verify the settings.")
+            except Exception as e:
+                print(f"Warning: Could not verify saved configuration: {e}")
+        else:
+            print("\nFailed to save configuration")
+    else:
+        print("\nConfiguration was not saved. Using settings in memory only.")
 
     return config
 

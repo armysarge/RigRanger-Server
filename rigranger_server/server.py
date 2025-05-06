@@ -13,7 +13,7 @@ import sys
 import asyncio
 import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import socketio
 from aiohttp import web
@@ -52,7 +52,7 @@ class RigRangerServer:
 
         # Port and host
         self.port = self.server_config.get('port', 8080)
-        self.host = self.server_config.get('host', '0.0.0.0')
+        self.host = self.server_config.get('host', '0.0.0.0')        # No static files path needed for API-only server
 
         # Set up Socket.IO and web application
         self.sio = socketio.AsyncServer(async_mode='aiohttp', cors_allowed_origins='*')
@@ -75,8 +75,11 @@ class RigRangerServer:
         self.site = None
 
     def setup_routes(self) -> None:
-        """Set up HTTP API routes."""
+        # Set up API routes
         setup_api_routes(self)
+
+        # Set up Socket.IO events
+        setup_socket_events(self)
 
     def setup_hamlib_events(self) -> None:
         """Set up event handlers for Hamlib events."""
@@ -140,7 +143,9 @@ class RigRangerServer:
     def setup_hamlib(self) -> None:
         """Set up Hamlib with the current configuration."""
         # Start the rigctld process
-        self.hamlib.start_rigctld(self.hamlib_config)
+        self.hamlib.start_rigctld(self.hamlib_config)    def create_minimal_ui(self, static_path: Path) -> None:
+        """A placeholder for backwards compatibility. Not used in API-only server."""
+        pass
 
     async def start(self) -> None:
         """Start the server."""
@@ -176,3 +181,37 @@ class RigRangerServer:
             await self.runner.cleanup()
 
         logger.info("Server stopped")
+
+    def update_config(self, new_config: Dict[str, Any], config_path: Optional[str] = None) -> bool:
+        """
+        Update the server configuration.
+
+        Args:
+            new_config (Dict[str, Any]): New configuration dictionary
+            config_path (str, optional): Path to the config file
+
+        Returns:
+            bool: True if update was successful
+        """
+        from .config import update_config as update_config_file
+
+        try:
+            # Update configuration through the centralized config management
+            updated_config, success = update_config_file(self.config, new_config, config_path)
+
+            if success:
+                # Update internal state
+                self.config = updated_config
+                if 'server' in new_config:
+                    self.server_config.update(new_config['server'])
+                if 'hamlib' in new_config:
+                    self.hamlib_config.update(new_config['hamlib'])
+                    # Restart Hamlib with new config
+                    self.setup_hamlib()
+                if 'audio' in new_config:
+                    self.audio_config.update(new_config['audio'])
+
+            return success
+        except Exception as e:
+            logger.error(f"Error updating configuration: {e}")
+            return False

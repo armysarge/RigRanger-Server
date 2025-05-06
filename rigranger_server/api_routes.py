@@ -28,12 +28,6 @@ async def handle_root(server: Any, request: web.Request) -> web.Response:
     Returns:
         web.Response: Server info response
     """
-    # Serve the index.html file if the public directory exists
-    index_path = server.static_path / 'index.html'
-    if index_path.exists():
-        return web.FileResponse(index_path)
-
-    # Otherwise, return a simple text response
     return web.json_response({
         'name': 'RigRanger Server',
         'version': '0.1.0',
@@ -224,6 +218,54 @@ async def handle_set_ptt(server: Any, request: web.Request) -> web.Response:
         return web.json_response({'error': str(e)}, status=500)
 
 
+async def handle_get_config(server: Any, request: web.Request) -> web.Response:
+    """
+    Handle config API requests.
+
+    Args:
+        server: The RigRanger server instance
+        request: The HTTP request
+
+    Returns:
+        web.Response: Current configuration
+    """
+    return web.json_response(server.config)
+
+
+async def handle_update_config(server: Any, request: web.Request) -> web.Response:
+    """
+    Handle config update API requests.
+
+    Args:
+        server: The RigRanger server instance
+        request: The HTTP request
+
+    Returns:
+        web.Response: Success/failure response
+    """
+    try:
+        config = await request.json()
+        if not isinstance(config, dict):
+            return web.json_response({'error': 'Invalid config format'}, status=400)
+
+        # Try to update the configuration
+        success = server.update_config(config, 'config.json')
+
+        if success:
+            return web.json_response({
+                'status': 'success',
+                'message': 'Configuration updated successfully'
+            })
+        else:
+            return web.json_response({
+                'status': 'error',
+                'message': 'Failed to save configuration'
+            }, status=500)
+
+    except Exception as e:
+        return web.json_response({'error': str(e)}, status=500)
+
+
 def setup_api_routes(server: Any) -> None:
     """
     Set up HTTP API routes.
@@ -234,6 +276,10 @@ def setup_api_routes(server: Any) -> None:
     # Root and status routes
     server.app.router.add_get('/', lambda request: handle_root(server, request))
     server.app.router.add_get('/api/status', lambda request: handle_status(server, request))
+
+    # Configuration routes
+    server.app.router.add_get('/api/config', lambda request: handle_get_config(server, request))
+    server.app.router.add_post('/api/config', lambda request: handle_update_config(server, request))
 
     # Radio control routes
     server.app.router.add_get('/api/radio/info', lambda request: handle_radio_info(server, request))

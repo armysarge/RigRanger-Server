@@ -364,16 +364,21 @@ class HamlibManager:
 
     def get_status(self) -> Dict[str, Any]:
         """
-        Get the current status of the Hamlib connection.
+        Get the current status of the Hamlib manager.
 
         Returns:
-            dict: Status information
+            Dict[str, Any]: Status dictionary
         """
         return {
             'connected': self.connected,
+            'port': self.port,
+            'host': self.host,
             'model': self.model,
             'device': self.device,
-            'port': self.port
+            'binary_path': self.binary_path,
+            'reconnect_attempts': self.reconnect_attempts,
+            'max_reconnect_attempts': self.max_reconnect_attempts,
+            'rigctld_running': self.rigctld_process is not None and self.rigctld_process.poll() is None
         }
 
     def get_info(self) -> Dict[str, Any]:

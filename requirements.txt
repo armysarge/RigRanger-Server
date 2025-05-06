@@ -1,0 +1,21 @@
+# Build dependencies - these must be installed first
+setuptools
+wheel
+
+# Core server dependencies
+aiohttp
+pyserial
+PyAudio
+python-socketio
+python-engineio
+
+# Network utilities - Windows specific
+pywin32>=305; sys_platform == 'win32'
+# Note: netifaces is optional and can be installed separately if needed
+# netifaces>=0.11.0
+
+# Configuration and utilities
+python-dotenv
+
+# Hamlib interface
+# Note: Hamlib itself needs to be installed separately on the system
