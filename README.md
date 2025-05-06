@@ -60,8 +60,6 @@ pip3 install -r requirements.txt
 python3 rigranger_python_server.py
 ```
 
-See [Raspberry Pi Setup Guide](docs/raspberry_pi_setup.md) for detailed instructions.
-
 ### macOS
 
 ```bash
