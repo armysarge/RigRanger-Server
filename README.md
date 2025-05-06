@@ -1,17 +1,16 @@
 # RigRanger Server
 
-<center><img src="public/logo.png" alt="RigRanger Logo" width="200"></center>
-
-A lightweight Python-based console application for controlling amateur radios over the network using RigRanger Client. This server is designed to run on small devices like Raspberry Pi but works on Windows, macOS, and Linux as well.
+A lightweight Python-based API server for controlling amateur radios over the network using RigRanger Client.
+Audio streaming, recording, and playback features are also included. This server is designed to be easy to set up and use, with a focus on performance and low resource usage. Hamlib is used for radio control, and the server can be run on a variety of platforms including Windows, macOS, Linux, and Raspberry Pi.
 
 ## Features
 
 - **RigRanger Client Integration** - Control a wide variety of amateur radios using the RigRanger Client
+- **RESTful API** - HTTP API endpoints for easy integration
 - **Socket.IO API** - Real-time communication for responsive control
 - **Cross Platform** - Runs on Windows, macOS, Linux, and Raspberry Pi
 - **Lightweight** - Minimal resource usage, perfect for embedded devices
 - **Standalone** - Can be built as a standalone executable with no dependencies
-- **API Documentation** - Easy to use HTTP API for integration with other applications
 
 ## Requirements
 
@@ -146,18 +145,22 @@ python rigranger_python_server.py -p 8090
 python rigranger_python_server.py -c config.json
 ```
 
-## API
+## API Reference
 
 ### HTTP API Endpoints
 
-| Endpoint                | Method | Description                   |
-|-------------------------|--------|-------------------------------|
-| `/api/status`           | GET    | Get server status             |
-| `/api/radio/info`       | GET    | Get radio information         |
-| `/api/radio/frequency`  | GET    | Get current frequency         |
-| `/api/radio/frequency`  | POST   | Set frequency                 |
-| `/api/radio/mode`       | GET    | Get current mode              |
-| `/api/radio/mode`       | POST   | Set mode                      |
+| Endpoint                | Method | Description                   | Response                          |
+|------------------------|---------|-------------------------------|------------------------------------|
+| `/api/status`          | GET     | Get server status            | Server status, addresses, ports    |
+| `/api/radio/info`      | GET     | Get radio information        | Model, capabilities, status       |
+| `/api/radio/frequency` | GET     | Get current frequency        | Current frequency in Hz           |
+| `/api/radio/frequency` | POST    | Set frequency                | Success/failure, new frequency    |
+| `/api/radio/mode`      | GET     | Get current mode            | Current mode and passband         |
+| `/api/radio/mode`      | POST    | Set mode                    | Success/failure, new mode         |
+| `/api/radio/ptt`       | GET     | Get PTT status              | Current PTT state                 |
+| `/api/radio/ptt`       | POST    | Set PTT state               | Success/failure, new PTT state    |
+| `/api/config`          | GET     | Get server configuration    | Current server configuration      |
+| `/api/config`          | POST    | Update configuration        | Success/failure, new config       |
 
 ### Socket.IO Events
 
@@ -182,20 +185,20 @@ You can use a JSON configuration file with the `-c` option to specify server set
     "host": "0.0.0.0"
   },
   "hamlib": {
-    "model": 3073,
-    "device": "/dev/ttyUSB0",
-    "baud": 19200,
-    "retry_interval": 5
+    "model": 3073,          // Hamlib model number (e.g., 3073 for IC-7300)
+    "device": "/dev/ttyUSB0", // Serial device path
+    "baud": 19200,          // Serial baud rate
+    "retry_interval": 5     // Seconds between retry attempts
   },
   "audio": {
-    "enabled": false,
-    "input_device": "default",
-    "output_device": "default",
-    "sample_rate": 48000
+    "enabled": false,       // Audio features enabled/disabled
+    "input_device": "default", // Audio input device (e.g., microphone)
+    "output_device": "default", // Audio output device (e.g., speakers)
+    "sample_rate": 48000    // Audio sample rate in Hz
   },
   "logging": {
-    "level": "info",
-    "file": "rig_ranger_server.log"
+    "level": "info",        // Logging level (debug, info, warning, error)
+    "file": "rig_ranger_server.log"  // Log file path
   }
 }
 ```
@@ -250,7 +253,16 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Contact
 
-Project Link: [https://github.com/YourUsername/RigRanger-Server](https://github.com/YourUsername/RigRanger-Server)
+Project Link: [https://github.com/Armysarge/RigRanger-Server](https://github.com/Armysarge/RigRanger-Server)
+
+## Security Considerations
+
+- The server does not implement authentication by default. It is recommended to:
+  - Run the server on a secure local network
+  - Use a firewall to restrict access to the API ports
+  - Implement authentication if exposing to the internet (see docs/security.md)
+- Validate all inputs from API clients
+- Keep your Python packages and Hamlib installation up to date
 
 ---
 
