@@ -18,7 +18,7 @@ from typing import Dict, Any, Optional
 import socketio
 from aiohttp import web
 
-from .hamlib_manager import HamlibManager
+from .hamlib.hamlib_manager import HamlibManager
 from .audio_manager import AudioManager
 from .api_routes import setup_api_routes
 from .socketio_events import setup_socket_events
@@ -143,7 +143,9 @@ class RigRangerServer:
     def setup_hamlib(self) -> None:
         """Set up Hamlib with the current configuration."""
         # Start the rigctld process
-        self.hamlib.start_rigctld(self.hamlib_config)    def create_minimal_ui(self, static_path: Path) -> None:
+        self.hamlib.start_rigctld(self.hamlib_config)
+
+    def create_minimal_ui(self, static_path: Path) -> None:
         """A placeholder for backwards compatibility. Not used in API-only server."""
         pass
 

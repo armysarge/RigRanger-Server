@@ -10,6 +10,12 @@ This module provides functions for executing specific Hamlib commands.
 import logging
 from typing import Dict, Any, Optional, Union, Tuple
 
+sys.path.append ('.')
+sys.path.append ('.libs')
+
+import Hamlib
+
+
 # Initialize logger
 logger = logging.getLogger("rig_ranger.hamlib_commands")
 

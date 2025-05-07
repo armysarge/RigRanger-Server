@@ -15,7 +15,24 @@ import socket
 import subprocess
 import threading
 import logging
+import shutil
+import platform
+import zipfile
+import tarfile
+import re
+import json
+import urllib.request
+from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Callable
+
+# Try to import requests, but fall back to urllib if not available
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 logger = logging.getLogger("rig_ranger.hamlib")
 
@@ -40,7 +57,11 @@ class HamlibManager:
         self.host = '127.0.0.1'
         self.model = 1  # Default model: Hamlib dummy/simulator
         self.device = None
+
+        # Check if Hamlib is installed or download it if needed
+        self.hamlib_app_path = self._ensure_hamlib_installed()
         self.binary_path = self.find_rigctld_path()
+
         self.command_queue = []
         self.processing = False
         self.reconnect_timer = None
@@ -61,38 +82,62 @@ class HamlibManager:
         Returns:
             Optional[str]: Path to rigctld or None if not found
         """
-        # Default paths to look for the rigctld binary
-        possible_paths = [
-            # Windows
-            r'C:\Program Files\Hamlib\bin\rigctld.exe',
-            r'C:\Program Files (x86)\Hamlib\bin\rigctld.exe',
+        # Default paths to look for the rigctld binary based on platform
+        possible_paths = []
 
-            # Linux
-            '/usr/bin/rigctld',
-            '/usr/local/bin/rigctld',
+        # Add our local app directory paths first
+        app_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app")
 
-            # macOS
-            '/usr/local/bin/rigctld',
-            '/opt/homebrew/bin/rigctld',
+        if sys.platform.startswith('win'):
+            # Windows paths
+            # Check our local app installation first
+            for root, dirs, files in os.walk(app_dir):
+                if 'bin' in dirs:
+                    bin_dir = os.path.join(root, 'bin')
+                    if os.path.exists(os.path.join(bin_dir, 'rigctld.exe')):
+                        possible_paths.append(os.path.join(bin_dir, 'rigctld.exe'))
+                elif 'rigctld.exe' in files:
+                    possible_paths.append(os.path.join(root, 'rigctld.exe'))
 
-            # Check in PATH
-            'rigctld'
-        ]
+            # Standard Windows paths
+            possible_paths.extend([
+                r'C:\Program Files\Hamlib\bin\rigctld.exe',
+                r'C:\Program Files (x86)\Hamlib\bin\rigctld.exe',
+                'rigctld.exe'  # Check in PATH
+            ])
+        else:
+            # Unix-like systems (Linux, macOS)
+            # Check our local app installation first
+            for root, dirs, files in os.walk(app_dir):
+                if 'bin' in dirs:
+                    bin_dir = os.path.join(root, 'bin')
+                    if os.path.exists(os.path.join(bin_dir, 'rigctld')):
+                        possible_paths.append(os.path.join(bin_dir, 'rigctld'))
+                elif 'rigctld' in files:
+                    possible_paths.append(os.path.join(root, 'rigctld'))
 
-        # Check if running on a Raspberry Pi with GPIO
-        try:
-            import RPi.GPIO
-            # Add Raspberry Pi specific paths
-            possible_paths.append('/usr/local/bin/rigctld')
-            possible_paths.append('/home/pi/hamlib/bin/rigctld')
-        except ImportError:
-            pass
+            # Standard Unix paths
+            possible_paths.extend([
+                '/usr/bin/rigctld',
+                '/usr/local/bin/rigctld',
+                '/opt/homebrew/bin/rigctld',  # macOS homebrew
+                'rigctld'  # Check in PATH
+            ])
+
+            # Check if running on a Raspberry Pi
+            try:
+                # Just check if we're on a Raspberry Pi without importing GPIO
+                with open('/proc/cpuinfo', 'r') as f:
+                    if 'Raspberry Pi' in f.read():
+                        possible_paths.append('/home/pi/hamlib/bin/rigctld')
+            except:
+                pass
 
         # Check if the paths exist and are executable
         for path in possible_paths:
             try:
                 # For 'rigctld' in PATH, use 'which' command
-                if path == 'rigctld':
+                if path == 'rigctld' or path == 'rigctld.exe':
                     try:
                         # On Windows, use where command
                         if sys.platform.startswith('win'):
@@ -680,3 +725,185 @@ class HamlibManager:
         self.connected = False
         logger.info("Hamlib manager stopped")
         self.emit('status', {'status': 'disconnected', 'message': 'Manager stopped'})
+
+    def _ensure_hamlib_installed(self) -> Optional[str]:
+        """
+        Ensure that Hamlib is installed on the system.
+        If it's not found in common locations, download and extract it.
+
+        Returns:
+            Optional[str]: Path to the Hamlib installation directory
+        """
+        # First check if rigctld is available in common locations
+        rigctld_path = self.find_rigctld_path()
+        if rigctld_path:
+            logger.info(f"Found existing Hamlib installation at: {rigctld_path}")
+            return os.path.dirname(os.path.dirname(rigctld_path))
+
+        # If not found, prepare to download
+        logger.info("Hamlib not found. Will download and install it.")
+
+        # Create app directory if it doesn't exist
+        app_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app")
+        os.makedirs(app_dir, exist_ok=True)
+
+        # Check if we already have a downloaded version
+        if os.path.exists(app_dir):
+            # Look for bin directory with rigctld
+            for root, dirs, files in os.walk(app_dir):
+                if sys.platform.startswith('win'):
+                    if "rigctld.exe" in files:
+                        return app_dir
+                else:
+                    if "rigctld" in files:
+                        return app_dir
+
+        # Download the latest release
+        try:
+            downloaded_path = self._download_latest_hamlib()
+            if downloaded_path:
+                # Extract the downloaded file
+                extracted_dir = self._extract_hamlib(downloaded_path, app_dir)
+                if extracted_dir:
+                    logger.info(f"Successfully installed Hamlib to {extracted_dir}")
+                    return extracted_dir
+        except Exception as e:
+            logger.error(f"Failed to download and install Hamlib: {e}")
+
+        return None
+
+    def _download_latest_hamlib(self) -> Optional[str]:
+        """
+        Download the latest Hamlib release from GitHub.
+
+        Returns:
+            Optional[str]: Path to the downloaded file or None if failed
+        """
+        try:
+            # Determine which version to download based on platform
+            if sys.platform.startswith('win'):
+                arch = 'w64' if platform.architecture()[0] == '64bit' else 'w32'
+                file_pattern = f"hamlib-{arch}"
+                ext = ".zip"
+            else:
+                file_pattern = "hamlib"
+                ext = ".tar.gz"
+
+            # Get GitHub API URL for latest release
+            api_url = "https://api.github.com/repos/Hamlib/Hamlib/releases/latest"
+
+            # Fetch latest release info
+            try:
+                # Try to use requests if available
+                if HAS_REQUESTS:
+                    import requests
+                    response = requests.get(api_url)
+                    release_info = response.json()
+                else:
+                    # Fall back to urllib
+                    with urllib.request.urlopen(api_url) as response:
+                        release_info = json.loads(response.read().decode('utf-8'))
+            except Exception as e:
+                logger.error(f"Error fetching release info: {e}")
+
+                # If GitHub API fails, try to use a direct link to the latest known release
+                if sys.platform.startswith('win'):
+                    # Direct link to a known good release from GitHub
+                    arch = 'w64' if platform.architecture()[0] == '64bit' else 'w32'
+                    download_url = f"https://github.com/Hamlib/Hamlib/releases/download/4.6.2/hamlib-{arch}-4.6.2.zip"
+                    download_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")
+                    os.makedirs(download_dir, exist_ok=True)
+                    file_name = os.path.join(download_dir, os.path.basename(download_url))
+
+                    logger.info(f"Downloading Hamlib from direct link: {download_url}")
+                    urllib.request.urlretrieve(download_url, file_name)
+                    logger.info(f"Download completed: {file_name}")
+                    return file_name
+                return None
+
+            # Find the appropriate asset to download
+            download_url = None
+            for asset in release_info['assets']:
+                if file_pattern in asset['name'] and asset['name'].endswith(ext):
+                    download_url = asset['browser_download_url']
+                    break
+
+            if not download_url:
+                logger.error(f"Could not find suitable Hamlib download for this platform")
+                return None
+
+            # Download the file
+            download_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")
+            os.makedirs(download_dir, exist_ok=True)
+
+            file_name = os.path.join(download_dir, os.path.basename(download_url))
+            logger.info(f"Downloading Hamlib from {download_url}")
+
+            if HAS_REQUESTS:
+                import requests
+                with requests.get(download_url, stream=True) as r:
+                    r.raise_for_status()
+                    with open(file_name, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            f.write(chunk)
+            else:
+                # Fall back to urllib if requests is not available
+                urllib.request.urlretrieve(download_url, file_name)
+
+            logger.info(f"Download completed: {file_name}")
+            return file_name
+
+        except Exception as e:
+            logger.error(f"Error downloading Hamlib: {e}")
+            return None
+
+    def _extract_hamlib(self, file_path: str, dest_dir: str) -> Optional[str]:
+        """
+        Extract downloaded Hamlib archive to destination directory.
+
+        Args:
+            file_path (str): Path to the downloaded archive
+            dest_dir (str): Destination directory
+
+        Returns:
+            Optional[str]: Path to the extracted directory or None if failed
+        """
+        try:
+            logger.info(f"Extracting {file_path} to {dest_dir}")
+
+            # Clear destination directory if it exists
+            if os.path.exists(dest_dir):
+                for item in os.listdir(dest_dir):
+                    item_path = os.path.join(dest_dir, item)
+                    if os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                    else:
+                        os.remove(item_path)
+
+            # Extract the archive
+            if file_path.endswith('.zip'):
+                with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                    zip_ref.extractall(dest_dir)
+            elif file_path.endswith('.tar.gz'):
+                with tarfile.open(file_path, 'r:gz') as tar_ref:
+                    tar_ref.extractall(dest_dir)            # Find the extracted directory (some archives have a root directory)
+            extracted_dir = dest_dir
+            contents = os.listdir(dest_dir)
+            if len(contents) == 1 and os.path.isdir(os.path.join(dest_dir, contents[0])):
+                extracted_dir = os.path.join(dest_dir, contents[0])
+
+            # Clean up the downloads folder
+            download_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")
+            if os.path.exists(download_dir):
+                try:
+                    shutil.rmtree(download_dir)
+                    logger.info(f"Cleaned up downloads directory: {download_dir}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up downloads directory: {e}")
+
+            logger.info(f"Extraction completed to {extracted_dir}")
+            return extracted_dir
+
+        except Exception as e:
+            logger.error(f"Error extracting Hamlib: {e}")
+            return None

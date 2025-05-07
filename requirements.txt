@@ -1,6 +1,7 @@
 # Build dependencies - these must be installed first
 setuptools
 wheel
+requests
 
 # Core server dependencies
 aiohttp
